@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="he" dir="rtl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>תקציב משק הבית</title>
+  <meta name="description" content="ניהול הכנסות והוצאות של משק הבית: עודף חודשי, התפלגות הוצאות, יכולת חיסכון והשקעה ותובנות.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Heebo:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/styles.css">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js" defer></script>
+</head>
+<body>
+  <header class="topbar no-print">
+    <a class="brand" href="#/dashboard"><span class="logo" aria-hidden="true">₪</span><span>תקציב משק הבית</span></a>
+    <nav class="tabs" aria-label="ניווט ראשי">
+      <a data-nav="dashboard" href="#/dashboard">לוח בקרה</a>
+      <a data-nav="wizard" href="#/wizard/household">הזנת נתונים</a>
+      <a data-nav="insights" href="#/insights">תובנות</a>
+      <a data-nav="simulator" href="#/simulator">מה אם?</a>
+      <a data-nav="report" href="#/report">דוח</a>
+    </nav>
+    <div class="top-end">
+      <span id="save-status" class="save-status"></span>
+      <details class="menu">
+        <summary aria-label="תפריט נתונים">⋯</summary>
+        <div class="menu-pop">
+          <button data-act="excel">ייצוא ל-Excel</button>
+          <a href="#/report">דוח להדפסה / PDF</a>
+          <button data-act="backup">גיבוי נתונים (קובץ)</button>
+          <button data-act="restore">שחזור מגיבוי</button>
+          <button data-act="sample">טעינת נתוני דוגמה</button>
+          <button data-act="wipe" class="danger">מחיקת כל הנתונים</button>
+        </div>
+      </details>
+    </div>
+  </header>
+
+  <main id="app"></main>
+
+  <nav class="bottom-nav no-print" aria-label="ניווט">
+    <a data-nav="dashboard" href="#/dashboard"><span aria-hidden="true">📊</span>בקרה</a>
+    <a data-nav="wizard" href="#/wizard/household"><span aria-hidden="true">✏️</span>נתונים</a>
+    <a data-nav="insights" href="#/insights"><span aria-hidden="true">💡</span>תובנות</a>
+    <a data-nav="simulator" href="#/simulator"><span aria-hidden="true">🧪</span>מה אם</a>
+    <a data-nav="report" href="#/report"><span aria-hidden="true">📄</span>דוח</a>
+  </nav>
+
+  <footer class="disclaimer no-print">המידע מוצג לצורכי המחשה וחינוך פיננסי בלבד ואינו מהווה ייעוץ השקעות או ייעוץ פיננסי אישי. הנתונים נשמרים במכשיר זה בלבד.</footer>
+
+  <input type="file" id="restore-file" accept="application/json,.json" hidden>
+
+  <script src="js/catalog.js"></script>
+  <script src="js/engine.js"></script>
+  <script src="js/insights.js"></script>
+  <script src="js/store.js"></script>
+  <script src="js/charts.js"></script>
+  <script src="js/export.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>
