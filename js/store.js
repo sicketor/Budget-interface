@@ -10,7 +10,7 @@
     return {
       schema: SCHEMA,
       year: new Date().getFullYear(),
-      household: { adults: 2, kids: 0, housing: 'rent', hasCar: false, cars: 1, hasLoans: false, hasProperty: false, hasBusiness: false, hasPortfolio: false, liquidSavings: '', monthlyInvestGoal: '', bufferMonthly: '' },
+      household: { adults: 2, kids: 0, housing: 'rent', hasCar: false, cars: 1, hasLoans: false, hasProperty: false, hasBusiness: false, hasPortfolio: false, liquidSavings: '', monthlyInvestGoal: '', bufferMonthly: '', age: '', horizon: '', riskTolerance: '', pensionType: '', hasStudyFund: '', pensionFeeDeposit: '', pensionFeeAccum: '' },
       incomes: {},
       expenses: {},
       progress: {},
@@ -52,7 +52,7 @@
   // נתוני דוגמה — ערכי ינואר מהאקסל, בתוספת שתי הוצאות שנתיות להדגמת התזרים
   function sample() {
     const s = blank();
-    Object.assign(s.household, { adults: 2, kids: 1, housing: 'rent', hasCar: true, cars: 1, hasPortfolio: true, liquidSavings: 45000, monthlyInvestGoal: 5000 });
+    Object.assign(s.household, { adults: 2, kids: 1, housing: 'rent', hasCar: true, cars: 1, hasPortfolio: true, liquidSavings: 45000, monthlyInvestGoal: 5000, age: 38, horizon: 'long', riskTolerance: 'medium', pensionType: 'pension' });
     const m = amount => ({ amount, freq: 'monthly' });
     s.incomes = { salary1: Object.assign(m(11000), { employment: 'salaried' }), salary2: Object.assign(m(11000), { employment: 'salaried' }), family: m(1000), portfolio: m(500) };
     s.expenses = {

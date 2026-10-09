@@ -1,7 +1,7 @@
 /* שכבת ה-UI: ניתוב, תהליך המילוי, לוח בקרה, תובנות, סימולטור ודוח. */
 (function (global) {
   'use strict';
-  const C = global.Catalog, E = global.Engine, I = global.Insights, Ch = global.Charts, S = global.Store;
+  const C = global.Catalog, E = global.Engine, I = global.Insights, Ch = global.Charts, S = global.Store, P = global.Playbook;
 
   let state = S.load() || S.blank();
   const openMore = new Set();
@@ -252,7 +252,26 @@
         ${moneyField('liquidSavings', 'חיסכון נזיל קיים', 'כסף זמין (עו"ש, פיקדונות) — לחישוב כרית הביטחון')}
         ${moneyField('bufferMonthly', 'סכום חודשי שנשאיר בצד לביטחון', 'נגרע מהעודף לפני חישוב יכולת ההשקעה. ריק = 10% מההוצאות', r.suggestedBuffer ? inputVal(r.suggestedBuffer) : '0')}
       </div>
+    </div>
+    <div class="card">
+      <div class="card-head"><h2>🧭 פרופיל השקעה וחיסכון פנסיוני</h2><p>משמש לחישוב רמת הסיכון ופילוח התיק לפי עקרונות הסדנה. לא חובה.</p></div>
+      <div class="form-grid">
+        <label class="field"><span class="label">גיל (המפרנס/ת העיקרי/ת)</span><span class="amount wide"><input class="amt" inputmode="numeric" data-hh="age" value="${inputVal(h.age)}" placeholder="לדוגמה 40"></span></label>
+      </div>
+      ${segField('horizon', 'מתי תצטרכו את הכסף שתשקיעו?', [['short', 'עד 5 שנים'], ['mid', '5–10 שנים'], ['long', 'מעל 10 שנים']])}
+      ${segField('riskTolerance', 'אם התיק ירד זמנית ב-20%, מה תרגישו?', [['low', 'לחץ רב, ארצה למכור'], ['medium', 'אי-נוחות, אבל אחכה'], ['high', 'רגוע — זו השקעה לטווח ארוך']])}
+      ${segField('pensionType', 'החיסכון הפנסיוני העיקרי', [['pension', 'קרן פנסיה'], ['managers', 'ביטוח מנהלים'], ['unknown', 'לא יודע/ת']])}
+      ${segField('hasStudyFund', 'יש לכם קרן השתלמות?', [['yes', 'כן'], ['no', 'לא']])}
+      <div class="form-grid">
+        <label class="field"><span class="label">דמי ניהול מההפקדה (%)</span><span class="amount wide"><input class="amt" inputmode="decimal" data-hh="pensionFeeDeposit" value="${inputVal(h.pensionFeeDeposit)}" placeholder="לדוגמה 1.5"><span aria-hidden="true">%</span></span></label>
+        <label class="field"><span class="label">דמי ניהול מהצבירה (%)</span><span class="amount wide"><input class="amt" inputmode="decimal" data-hh="pensionFeeAccum" value="${inputVal(h.pensionFeeAccum)}" placeholder="לדוגמה 0.22"><span aria-hidden="true">%</span></span></label>
+      </div>
+      <small class="help">דמי הניהול מופיעים בדוח השנתי של הקרן או באתר "הר הכסף".</small>
     </div>`;
+  }
+  function segField(key, label, opts) {
+    const v = state.household[key];
+    return `<div class="field"><span class="label">${label}</span><div class="seg wrap">${opts.map(([k, l]) => `<button type="button" data-act="hh-set" data-hh="${key}" data-val="${k}" class="${v === k ? 'on' : ''}">${l}</button>`).join('')}</div></div>`;
   }
 
   function stepIncome() {
@@ -486,28 +505,172 @@
   }
 
   /* ---------- תובנות ---------- */
+  const INS_TABS = [['overview', 'מצב ותוכנית'], ['cut', 'צמצום הוצאות'], ['invest', 'חיסכון והשקעה'], ['pension', 'פנסיה וחיסכון ארוך טווח']];
   function viewInsights() {
     if (!hasData()) return viewWelcome();
-    const r = compute(), sc = I.score(r), ins = I.insights(r, state);
+    const r = compute();
+    const tab = INS_TABS.some(t => t[0] === ui.insTab) ? ui.insTab : 'overview';
+    const body = { overview: insOverview, cut: insCut, invest: insInvest, pension: insPension }[tab](r);
     return `<section class="insights-page">
-      <div class="page-head"><div><p class="eyebrow">ניתוח</p><h1>התובנות שלכם</h1></div></div>
+      <div class="page-head"><div><p class="eyebrow">ניתוח לפי עקרונות הסדנה "כסף, התנהלות פיננסית והשקעות נכונות"</p><h1>התובנות שלכם</h1></div></div>
+      <nav class="subtabs" role="tablist">${INS_TABS.map(([k, l]) => `<button role="tab" aria-selected="${k === tab}" class="${k === tab ? 'on' : ''}" data-act="ins-tab" data-val="${k}">${l}</button>`).join('')}</nav>
+      ${body}
+      <p class="fine">התוכן מבוסס על עקרונות הסדנה ומיועד ללימוד ולהמחשה בלבד. אינו ייעוץ השקעות, ייעוץ פנסיוני או המלצה אישית. תקרות, דמי ניהול ונתונים סטטיסטיים מוצגים כפי שהופיעו בסדנה — יש לוודא את הערכים העדכניים.</p>
+    </section>`;
+  }
+
+  const STEP_ICON = { done: '✓', partial: '◐', todo: '○' };
+  function insOverview(r) {
+    const sc = I.score(r), ins = I.insights(r, state), pos = P.position(r);
+    const path = P.actionPath(r, state, completion());
+    const bench = P.benchmark(r);
+    return `${pos ? `<div class="card position lvl-${pos.level}">
+        <div class="pos-bar" role="img" aria-label="40% במינוס, 40% בקושי, 20% חיים טוב">
+          ${[['minus', 40, 'במינוס'], ['edge', 40, 'בקושי גומרים את החודש'], ['good', 20, 'חוסכים']].map(([g, w, l]) => `<div class="seg-${g} ${pos.group === g ? 'here' : ''}" style="flex:${w}"><b>${w}%</b><span>${l}</span>${pos.group === g ? '<em>אתם כאן</em>' : ''}</div>`).join('')}
+        </div>
+        <h2>${pos.title}</h2><p>${pos.text}</p>
+      </div>` : ''}
+      <div class="card">
+        <div class="card-head"><h2>הדרך לעצמאות פיננסית</h2><p>חמשת השלבים מהסדנה, והמקום שלכם בכל אחד.</p></div>
+        <ol class="path">${path.map(s => `<li class="st-${s.status}"><span class="st-dot" aria-hidden="true">${STEP_ICON[s.status]}</span><div><h3>${s.title}</h3><p>${s.text}</p></div></li>`).join('')}</ol>
+      </div>
       <div class="grid-2">
         <div class="card">
           <div class="card-head"><h2>הציון הפיננסי שלכם</h2></div>
           ${sc ? `<div class="score-big"><div class="score-ring lvl-${sc.level}" style="--p:${sc.total}"><b>${sc.total}</b><span>/100</span></div>
             <ul class="parts">${sc.parts.map(p => `<li class="lvl-${p.level}"><div class="p-head"><span><span class="lvl-icon" aria-hidden="true">${LEVEL[p.level].icon}</span> ${p.label}</span><b>${p.points}/${p.w}</b></div><div class="meter thin"><div style="width:${(p.points / p.w) * 100}%"></div></div></li>`).join('')}</ul></div>` : '<p class="muted">הזינו הכנסות כדי לחשב ציון.</p>'}
-          <p class="fine">הציון הוא מדד פנימי וחינוכי המבוסס על שיעור חיסכון, הוצאות קבועות, חוב, דיור, יציבות הכנסה, כרית ביטחון ויכולת השקעה. אינו המלצה פיננסית אישית ואינו דירוג אשראי.</p>
+          <p class="fine">הציון הוא מדד פנימי וחינוכי. אינו המלצה פיננסית אישית ואינו דירוג אשראי.</p>
         </div>
         <div class="card"><div class="card-head"><h2>התראות</h2></div>${alertsList(r) || '<p class="muted">אין התראות.</p>'}</div>
       </div>
       <div class="insight-list">${ins.map(x => `<article class="insight lvl-${x.level}"><div class="ins-icon" aria-hidden="true">${x.icon}</div><div><h3>${x.title} <span class="badge lvl-${x.level}">${LEVEL[x.level].label}</span></h3><p>${x.text}</p></div></article>`).join('')}</div>
       <div class="card">
-        <div class="card-head row"><h2>פוטנציאל חיסכון</h2>
+        <div class="card-head"><h2>השוואה לסל הצריכה הממוצע בישראל</h2><p>החלק של כל תחום מתוך ההוצאות שלכם, מול משקלו בסל הצריכה של משק בית ממוצע (נתוני הלמ"ס כפי שהוצגו בסדנה). ההוצאה החודשית הממוצעת למשק בית: ${money(P.IL_AVG.expense)}.</p></div>
+        <div class="table-wrap"><table class="bench">
+          <thead><tr><th>תחום</th><th>אצלכם</th><th>% מההוצאות</th><th>ממוצע ארצי</th><th></th></tr></thead>
+          <tbody>${bench.map(b => `<tr><td>${b.label}</td><td>${money(b.monthly)}</td><td>${pct(b.share)}</td><td>${pct(b.avg)}</td><td>${b.diff > 0.05 ? `<span class="badge lvl-warn">גבוה ב-${Math.round(b.diff * 100)} נק׳</span>` : b.diff < -0.05 ? `<span class="badge lvl-good">נמוך ב-${Math.round(-b.diff * 100)} נק׳</span>` : '<span class="muted">בטווח</span>'}</td></tr>`).join('')}</tbody>
+        </table></div>
+      </div>`;
+  }
+
+  function insCut(r) {
+    const m = P.matrix(r), t = P.tips(r);
+    const total = r.monthly_expenses || 1;
+    return `<div class="card">
+        <div class="card-head"><h2>מודל "חשוב / דחוף"</h2><p>לפי הסדנה, עוברים על ההוצאות לפי סדר עדיפויות ומצמצמים כל אחת בנפרד. מתחילים ממה שלא חשוב ולא דחוף, וממשיכים הלאה רק אם צריך.</p></div>
+        <div class="stack" role="img" aria-label="חלוקת ההוצאות לפי חשיבות ודחיפות">${m.filter(q => q.monthly).map(q => `<div style="width:${(q.monthly / total) * 100}%;background:${q.color}" title="${q.label}"></div>`).join('')}</div>
+        <div class="quadrants">${m.map(q => `<div class="quad">
+          <div class="q-head"><span class="sw" style="background:${q.color}"></span><b>${q.cut}. ${q.label}</b><span class="q-amt">${money(q.monthly)} · ${pct(q.pct)}</span></div>
+          <p class="q-hint">${q.hint}</p>
+          ${q.items.length ? `<ul>${q.items.slice(0, 6).map(i => `<li><span>${esc(i.name)}</span>${money(i.monthly)}</li>`).join('')}${q.items.length > 6 ? `<li class="muted">ועוד ${q.items.length - 6}</li>` : ''}</ul>` : '<p class="muted">אין הוצאות בקבוצה זו.</p>'}
+        </div>`).join('')}</div>
+      </div>
+      <div class="card">
+        <div class="card-head row"><h2>דרכים לצמצום — מותאם להוצאות שלכם</h2>${t.list.length ? `<span class="tip-total">פוטנציאל כולל: ${money(t.totalMin)}–${money(t.totalMax)} בחודש</span>` : ''}</div>
+        ${t.list.length ? `<div class="tips">${t.list.map(x => `<article class="tip">
+          <div class="tip-head"><span class="badge">${x.area}</span><h3>${x.title}</h3></div>
+          <p>${x.text}</p>
+          <div class="tip-save">חיסכון פוטנציאלי: <b>${money(x.min)}–${money(x.max)}</b> בחודש <span class="muted">(${money(x.min * 12)}–${money(x.max * 12)} בשנה)</span></div>
+        </article>`).join('')}</div>
+        <p class="fine">הטווחים הם כפי שהוצגו בסדנה, ומוגבלים לגובה ההוצאה שהזנתם. בסיכום הכולל נספרת רק החלופה המשתלמת ביותר לכל הוצאה.</p>` : '<p class="muted">עוד לא הוזנו הוצאות שיש להן טיפים בסדנה (חשמל, תקשורת, מנויים, מזון, ביגוד, משכנתא והלוואות).</p>'}
+      </div>
+      <div class="card">
+        <div class="card-head row"><h2>פוטנציאל חיסכון לפי סעיף</h2>
           <label class="inline-range">צמצום של <b data-label="potentialCut">${Math.round(ui.potentialCut * 100)}%</b><input type="range" min="5" max="50" step="5" value="${ui.potentialCut * 100}" data-ui="potentialCut"></label></div>
         <div id="pot-out">${potentialTable(r)}</div>
-      </div>
-    </section>`;
+      </div>`;
   }
+
+  function insInvest(r) {
+    const pyf = P.payYourselfFirst(r), rp = P.riskProfile(r, state);
+    const base = r.investment_capacity > 0 ? r.investment_capacity : (pyf ? pyf.target : 0);
+    const g = P.growth(base);
+    const allocRow = (label, share, amt, color) => `<div class="alloc-row"><span class="sw" style="background:${color}"></span><span class="a-label">${label}</span><span class="a-bar"><span style="width:${share * 100}%;background:${color}"></span></span><b>${Math.round(share * 100)}%</b>${amt !== null ? money(amt) : ''}</div>`;
+    return `<div class="grid-2">
+        <div class="card">
+          <h2>🏦 שלמו לעצמכם קודם</h2>
+          ${pyf ? `<p>לפי הסדנה, החיסכון יוצא <b>בתחילת החודש</b> לחשבון ייעודי — לא מה שנשאר בסופו.</p>
+          <dl class="forecast">
+            <div><dt>יעד: 20% מההכנסה</dt><dd>${money(pyf.target)}</dd></div>
+            <div><dt>הפקדה קבועה היום</dt><dd>${money(pyf.current)}</dd></div>
+          </dl>
+          <ul class="checklist">
+            <li class="${pyf.current ? 'ok' : ''}">פתחו חשבון בנק ייעודי לחיסכון, אחרי סקר שוק של עמלות</li>
+            <li class="${pyf.current ? 'ok' : ''}">הגדירו העברה קבועה של ${money(pyf.realistic || pyf.target)} בתחילת כל חודש</li>
+            <li>אל תשתמשו בחשבון הזה לשום דבר מלבד חיסכון והשקעה</li>
+            <li>טיפ מהסדנה: ברוב מכשירי ההשקעה אפשר להגדיר הוראת קבע, כך שההשקעה קורית מעצמה כל חודש</li>
+          </ul>` : '<p class="muted">הזינו הכנסות כדי לחשב.</p>'}
+        </div>
+        <div class="card">
+          <h2>🌱 כוחה של ריבית דריבית</h2>
+          <p>השקעה חודשית של <b>${money(base)}</b> ${r.investment_capacity > 0 ? '(יכולת ההשקעה שלכם)' : '(20% מההכנסה)'} — כמה תצטבר?</p>
+          <div class="table-wrap"><table class="growth"><thead><tr><th>תקופה</th><th>בלי השקעה</th><th>6% בשנה</th><th>8% בשנה</th></tr></thead>
+            <tbody>${g.map(row => `<tr><td>${row.years} שנה</td>${row.values.map((v, i) => `<td${i === 2 ? ' class="strong"' : ''}>${money(v)}</td>`).join('')}</tr>`).join('')}</tbody></table></div>
+          <p class="fine">חישוב בריבית חודשית מצטברת, לפני מס ודמי ניהול. 6% ו-8% הן התשואות שבהן השתמשה הסדנה להמחשה (שוק ההון הניב בממוצע כ-8.5% בשנה ב-30 השנים האחרונות). תשואות עבר אינן מבטיחות תשואות עתידיות. כסף שנשאר בעו"ש נשחק באינפלציה.</p>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-head row"><h2>🧭 רמת הסיכון ופילוח התיק</h2><a class="link" href="#/wizard/household">עדכון הפרופיל</a></div>
+        ${rp.missing ? `<p>כדי לחשב את רמת הסיכון המתאימה לפי עקרונות הסדנה, השלימו בפרטי משק הבית: <b>${rp.missing.join(', ')}</b>.</p><a class="btn ghost sm" href="#/wizard/household">להשלמת הפרטים</a>` : `
+        <div class="risk-head lvl-${rp.level}"><span>רמת הסיכון לפי הנתונים שלכם</span><b>${rp.label}</b></div>
+        <ul class="reasons">${rp.reasons.map(x => `<li><b>${x.factor}:</b> ${x.text}</li>`).join('')}</ul>
+        <h3 class="sub">פילוח התיק לפי הסדנה${r.investment_capacity > 0 ? ` — מתוך ${money(r.investment_capacity)} בחודש` : ''}</h3>
+        <div class="alloc">
+          ${allocRow('מניות / קרנות מדדים ("מסוכן")', rp.allocation.stocks, r.investment_capacity > 0 ? rp.monthly.stocks : null, '#2a78d6')}
+          ${allocRow('אג"ח ופיקדונות ("בטוח")', rp.allocation.bonds, r.investment_capacity > 0 ? rp.monthly.bonds : null, '#1baf7a')}
+          ${allocRow('מזומן', rp.allocation.cash, r.investment_capacity > 0 ? rp.monthly.cash : null, '#8a8984')}
+        </div>`}
+        <h3 class="sub">עקרונות ההשקעה מהסדנה</h3>
+        <ul class="bullets">
+          <li><b>קרנות עוקבות מדדים</b> הן הדרך הבטוחה ביותר למי שאינו מקצוען בשוק ההון: פיזור רחב, דמי ניהול נמוכים וחיסכון רב בזמן.</li>
+          <li><b>רוכשים לפי איזון התיק</b>, מפקידים באופן קבוע (חודשי, דו-חודשי או רבעוני), ובכל הפקדה רוכשים את אותו סל.</li>
+          <li><b>לא נוגעים ונהנים מהרווחים</b> — השקעה ארוכת טווח, בלי החלטות רגשיות.</li>
+          <li><b>מזומן</b> — תמיד להשאיר 5%–10% מהתיק נזיל.</li>
+          <li><b>מס עיזבון אמריקאי:</b> משקיעים ישראלים בקרנות הרשומות בארה"ב חשופים למס עיזבון מעל $60,000. לכן הסדנה ממליצה לבדוק קרנות מקבילות הרשומות באירלנד, שחלקן נסחרות גם בבורסה בתל אביב.</li>
+          <li><b>שוק ההון מול נדל"ן:</b> בממוצע 8.5% מול 3.7% בשנה ב-30 השנים האחרונות. בנדל"ן נדרש הון התחלתי של כ-₪150,000, ובשוק ההון אפשר להתחיל מכל סכום.</li>
+        </ul>
+      </div>`;
+  }
+
+  function insPension(r) {
+    const checks = P.pensionChecks(r, state), F = P.PENSION_FACTS;
+    return `<div class="insight-list">${checks.map(x => `<article class="insight lvl-${x.level}"><div><h3>${x.title} <span class="badge lvl-${x.level}">${LEVEL[x.level].label}</span></h3><p>${x.text}</p></div></article>`).join('')}</div>
+      <div class="card">
+        <div class="card-head"><h2>שלושת מכשירי החיסכון הפנסיוני</h2><p>חיסכון באחד מהם מזכה בהטבות מס בשלב ההפקדה, בשלב החיסכון ובגיל הפרישה.</p></div>
+        <div class="table-wrap"><table class="compare">
+          <thead><tr><th></th><th>קרן פנסיה</th><th>ביטוח מנהלים</th><th>קופת גמל</th></tr></thead>
+          <tbody>
+            <tr><td>דמי ניהול מקסימליים</td><td>${F.pensionMax.deposit}% הפקדה + ${F.pensionMax.accum}% צבירה</td><td>${F.managersMax.deposit}% הפקדה + ${F.managersMax.accum}% צבירה</td><td>${F.managersMax.deposit}% הפקדה + ${F.managersMax.accum}% צבירה</td></tr>
+            <tr><td>ממוצע בפועל</td><td>כ-${F.pensionAvg.deposit}% + ${F.pensionAvg.accum}%</td><td>גבוה, עד פי 5 מקרן פנסיה</td><td>כ-${F.gemelAvgAccum}% מהצבירה</td></tr>
+            <tr><td>ביטוחים</td><td>כולל ביטוח חיים ואובדן כושר עבודה</td><td>כולל ביטוח חיים; אובדן כושר בתוספת</td><td>אין ביטוחים — יש לרכוש בנפרד</td></tr>
+            <tr><td>מתי מתאים</td><td>ברירת המחדל לרוב השכירים והעצמאים</td><td>בעיקר כמשלים להכנסה מעל פי 2 מהשכר הממוצע</td><td>חיסכון משלים</td></tr>
+          </tbody>
+        </table></div>
+      </div>
+      <div class="grid-2">
+        <div class="card">
+          <h2>קרן השתלמות</h2>
+          <p>אפיק החיסכון המשתלם ביותר כיום, גם לשכירים וגם לעצמאים. פטורה ממס רווחי הון עד התקרה, ואפשר לבחור חברה ומסלול.</p>
+          <ul class="bullets">
+            <li><b>שכירים:</b> פטור עד שכר של ${money(F.studyFundSalaryCap)} בחודש. תלוי במקום העבודה — כדאי לבקש.</li>
+            <li><b>עצמאים:</b> הפקדה של עד ${money(F.studyFundSelfExempt)} בשנה פטורה ממס רווחי הון. 4.5% מההכנסה, עד ${money(F.studyFundSelfDeduct)}, מוכרים כהוצאה.</li>
+          </ul>
+        </div>
+        <div class="card">
+          <h2>קופת גמל להשקעה</h2>
+          <p>השקעה נזילה בשוק ההון, עם הטבת מס בגיל הפרישה.</p>
+          <ul class="bullets">
+            <li>נזילה מהיום הראשון (מס רווחי הון של 25%), או קצבה פטורה ממס מגיל 60</li>
+            <li>תקרת הפקדה: כ-${money(F.gemelInvestCap)} בשנה · דמי ניהול ממוצעים: כ-0.7%</li>
+            <li>אפשר לקחת הלוואה של עד 80% מהקרן, ולעבור בין בתי השקעות בלי אירוע מס</li>
+          </ul>
+        </div>
+      </div>
+      <div class="card note-card">
+        <p>לפי הסדנה, החיסכון הפנסיוני הוא אפיק ההשקעה החשוב ביותר בחיים. דמי ניהול גבוהים ומסלול לא אופטימלי יכולים להוריד מאות אלפי שקלים ואף יותר מהסכום בגיל הפרישה. המלצת הסדנה: להתייעץ עם יועץ או מתכנן פנסיוני אובייקטיבי.</p>
+      </div>`;
+  }
+
   function potentialTable(r) {
     const pot = I.savingsPotential(r, ui.potentialCut);
     const potTotal = E.sum(pot.map(p => p.saveMonthly));
@@ -790,6 +953,7 @@
       case 'hh-set': state.household[b.dataset.hh] = b.dataset.val; persist(); rerender(); break;
       case 'next': state.progress[b.dataset.step] = true; persist(); location.hash = '#/wizard/' + b.dataset.next; break;
       case 'month': ui.month = +b.dataset.val; rerender(); break;
+      case 'ins-tab': ui.insTab = b.dataset.val; rerender(); break;
       case 'sim-reset': ui.sim = { all: 0, variable: 0, cat: ui.sim.cat, catCut: 0, income: 0 }; rerender(); break;
       case 'sample':
         if (hasData() && !confirm('לטעון נתוני דוגמה? הנתונים הנוכחיים יוחלפו.')) break;

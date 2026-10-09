@@ -153,6 +153,8 @@
       }
       out.push({ level: lvl, icon: '📈', title: 'פוטנציאל השקעה', text });
     }
+    // כללי הסדנה (js/playbook.js)
+    if (global.Playbook) out.push(...global.Playbook.extraInsights(r, state));
     return out;
   }
 
